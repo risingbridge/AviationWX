@@ -8,13 +8,15 @@ using Xamarin.Forms;
 using Xamarin.Forms.Xaml;
 using AviationWX.Models;
 using System.Net.Http;
+using Newtonsoft.Json;
+using System.Xml;
 
 namespace AviationWX
 {
     [XamlCompilation(XamlCompilationOptions.Compile)]
     public partial class AllMetars : ContentPage
     {
-        private string apiUrl = "https://api.met.no/weatherapi/tafmetar/1.0/metar.txt?icao="; //Legg til ICAO
+        private string apiUrl = "https://www.aviationweather.gov/adds/dataserver_current/httpparam?dataSource=metars&requestType=retrieve&format=xml&hoursBeforeNow=1&mostRecentForEachStation=true&stationString="; //Legg til ICAO separert med komma,
         public AllMetars()
         {
             InitializeComponent();
@@ -23,60 +25,95 @@ namespace AviationWX
         protected override void OnAppearing()
         {
             base.OnAppearing();
-            var aerodromes = new List<Aerodrome>();
-            var files = Directory.EnumerateFiles(App.FolderPath, "*aerodrome.txt");
-            foreach (var filename in files)
+            var files = Path.Combine(App.FolderPath, "aerodromes.json");
+            if (!File.Exists(files))
             {
-                aerodromes.Add(new Aerodrome
-                {
-                    Filename = filename,
-                    ICAO = File.ReadAllText(filename).ToUpper(),
-                    metar = "Ingen metar"
-                });
+                File.WriteAllText(files, "");
+            }
+            string jsonString = File.ReadAllText(files);
+            //DisplayAlert("path", jsonString, "ok");
+            List<Aerodrome> aerodromes = new List<Aerodrome>();
+            if(jsonString.Length > 10)
+            {
+                aerodromes = JsonConvert.DeserializeObject<List<Aerodrome>>(jsonString);
             }
             listView.ItemsSource = aerodromes;
         }
 
-        private async Task<string> UpdateMetar(string icao)
+        private async Task<Dictionary<string, string>> UpdateMetar()
         {
-            string api = apiUrl + icao;
-            string returnMetar = "No METAR";
+            string apiString = "";
+            var files = Path.Combine(App.FolderPath, "aerodromes.json");
+            string jsonString = File.ReadAllText(files);
+            List<Aerodrome> aerodromes = new List<Aerodrome>();
+            if(jsonString.Length > 10)
+                aerodromes = JsonConvert.DeserializeObject<List<Aerodrome>>(jsonString);
+            foreach (Aerodrome aerodrome in aerodromes)
+            {
+                apiString += aerodrome.ICAO + ",";
+            }
+            string api = apiUrl + apiString;
             HttpClient client = new HttpClient();
+            Dictionary<string, string> metarDict = new Dictionary<string, string>();
             try
             {
                 HttpResponseMessage response = await client.GetAsync(api);
                 response.EnsureSuccessStatusCode();
                 string rawMetarString = await response.Content.ReadAsStringAsync(); //.Regex.Replace(s, @"\t|\n|\r", "");
-                rawMetarString = rawMetarString.Replace("\t", "");
-                rawMetarString = rawMetarString.Replace("\n", "");
-                rawMetarString = rawMetarString.Replace("\r", "");
-                string[] metarArray = rawMetarString.Split('=');
-                int arrayLength = metarArray.Length;
-                string currentMetar = metarArray[arrayLength - 2];
-                returnMetar = currentMetar;
+                XmlDocument doc = new XmlDocument();
+                doc.LoadXml(rawMetarString);
+                foreach (XmlNode node in doc.DocumentElement.ChildNodes)
+                {
+                    foreach (XmlNode node1 in node)
+                    {
+                        string icao = "error";
+                        string metar = "";
+                        foreach (XmlNode node2 in node1)
+                        {
+                            if (node2.Name == "station_id")
+                            {
+                                icao = node2.InnerText;
+                            }
+                            else if (node2.Name == "raw_text")
+                            {
+                                metar = node2.InnerText;
+                            }
+                        }
+                        if (icao != "error" && metar != "error")
+                        {
+                            if (!metarDict.ContainsKey(icao))
+                                metarDict.Add(icao, metar);
+                        }
+                    }
+
+                }
             }
             catch (Exception ex)
             {
-                returnMetar = "Error";
+
             }
-            return returnMetar;
+            return metarDict;
         }
 
         async void OnUpdateClicked(object sender, EventArgs e)
         {
-            var aerodromes = new List<Aerodrome>();
-            var files = Directory.EnumerateFiles(App.FolderPath, "*aerodrome.txt");
-            foreach (var filename in files)
+            var files = Path.Combine(App.FolderPath, "aerodromes.json");
+            List<Aerodrome> aerodromes = JsonConvert.DeserializeObject<List<Aerodrome>>(File.ReadAllText(files));
+            Dictionary<string, string> metarDict = await UpdateMetar();
+            foreach (Aerodrome ad in aerodromes)
             {
-                string currentIcao = File.ReadAllText(filename).ToUpper();
-                aerodromes.Add(new Aerodrome
+                if (metarDict.ContainsKey(ad.ICAO))
                 {
-                    Filename = filename,
-                    ICAO = currentIcao,
-                    metar = await UpdateMetar(currentIcao)
-                });
+                    ad.metar = metarDict[ad.ICAO];
+                }
+                else
+                {
+                    ad.metar = "Ingen metar";
+                }
             }
             listView.ItemsSource = aerodromes;
+            string jsonString = JsonConvert.SerializeObject(aerodromes, Newtonsoft.Json.Formatting.Indented);
+            File.WriteAllText(files, jsonString);
         }
 
         async void OnAerodromeAddedClicked(object sender, EventArgs e)

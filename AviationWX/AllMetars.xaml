@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://xamarin.com/schemas/2014/forms"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:d="http://xamarin.com/schemas/2014/forms/design"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="AviationWX.AllMetars">
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="OppdateR" Clicked="OnUpdateClicked"/>
+        <ToolbarItem Text="Fjern" Clicked="OnAerodromeRemoveClicked" />
+        <ToolbarItem Text="Legg til" Clicked="OnAerodromeAddedClicked" />
+    </ContentPage.ToolbarItems>
+    <ContentPage.Content>
+        <ListView x:Name="listView" Margin="20" ItemSelected="OnListViewItemSelected">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <TextCell Text="{Binding ICAO}" Detail="{Binding metar}"/>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </ContentPage.Content>
+</ContentPage>
